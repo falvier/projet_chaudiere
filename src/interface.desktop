@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ma chaudière Ökofen
+Exec=python3 /home/olivier/Documents/okofenv2/src/main.py
+Icon=utilities-terminal
+Terminal=false
+Categories=Utility;
+Icon=/home/olivier/Documents/okofenv2/src/smartxs.png
