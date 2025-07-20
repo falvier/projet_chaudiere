@@ -9,6 +9,9 @@ import sqlite3
 from src.config import DB_FILE
 import pandas as pd
 from datetime import datetime
+import logging
+logger = logging.getLogger(__name__)
+
 db_path = DB_FILE
 
 TABLE_NAME = "donnees"
@@ -31,20 +34,25 @@ def charger_donnees(date_str, db_path=DB_FILE):
 
 
 def charger_donnees_periode(start_date, end_date, db_path=DB_FILE):
-    conn = sqlite3.connect(db_path)
-    query = f"""
-        SELECT datetime, modulation_puissance_chaudiere, temperature_actuelle
-        FROM {TABLE_NAME}
-        WHERE date(datetime) BETWEEN '{start_date}' AND '{end_date}'
-        ORDER BY datetime
-    """
-    df = pd.read_sql_query(query, conn, parse_dates=["datetime"])
-    conn.close()
-    return df
+    try:    
+        conn = sqlite3.connect(db_path)
+        query = f"""
+            SELECT datetime, modulation_puissance_chaudiere, temperature_actuelle
+            FROM {TABLE_NAME}
+            WHERE date(datetime) BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY datetime
+        """
+        df = pd.read_sql_query(query, conn, parse_dates=["datetime"])
+        conn.close()
+        return df
+    except Exception as e:
+        logger.error("❌ Erreur lors du chargement des données : %s", e)
+        return pd.DataFrame()
 
 
 def estimer_conso_pellets(df, pci=4.4, rendement=0.80, puissance_nominale=14):
     if "modulation_puissance_chaudiere" not in df:
+        logger.warning("⚠️ Colonne 'modulation_puissance_chaudiere' manquante.")
         return None
 
     modulation = df["modulation_puissance_chaudiere"].fillna(0).clip(lower=0)
@@ -61,6 +69,7 @@ def analyser_cycles(df):
 
     
     if 'modulation_puissance_chaudiere' not in df or df.empty:
+        logger.warning("⚠️ DataFrame vide dans l'analyse des cycles.")
         return {"message": "Pas de données disponibles"}
     
     df = df.copy()
@@ -91,8 +100,10 @@ def analyser_cycles(df):
 
 def generer_synthese(df):
     synthese = {}
+    logger.info("📊 Génération de la synthèse...")
 
     if df.empty or "datetime" not in df.columns:
+        logger.warning("⚠️ Données manquantes ou colonne 'datetime' absente.")
         return {"Erreur": "Données manquantes ou invalides."}
 
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -119,12 +130,13 @@ if __name__ == "__main__":
     start_date = "2025-06-10"
     end_date = "2025-06-14"
 
+    logger.info(f"📅 Période analysée : {start_date} → {end_date}")
     df = charger_donnees_periode(start_date, end_date)
 
     if df.empty:
-        print("Aucune donnée trouvée pour cette période.")
+        logger.info("🛑 Aucune donnée trouvée pour cette période.")
     else:
         synthese = generer_synthese(df)
-        print(f"\n--- Synthèse du {start_date} au {end_date} ---")
+        logger.info(f"\n--- 📝 Synthèse du {start_date} au {end_date} ---")
         for cle, valeur in synthese.items():
-            print(f"{cle} : {valeur}")
+            logger.info(f"  {cle} : {valeur}")

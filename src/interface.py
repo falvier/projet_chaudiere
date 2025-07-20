@@ -5,7 +5,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 # interface_calendrier.py
 
-import sqlite3
 from PyQt5.QtWidgets import (QApplication,
                              QWidget,
                              QVBoxLayout,
@@ -24,17 +23,24 @@ from PyQt5.QtWidgets import (QApplication,
                              QTextEdit
                              )
 from PyQt5.QtGui import (QTextCharFormat,
-                         QColor,
+                         QColor
                         )
-from PyQt5.QtCore import QDate, Qt
-from src.config import DB_FILE, COLONNES_GRAPHIQUE, DATA_DIR, RENAME_DICT
+from PyQt5.QtCore import (QDate,
+                          Qt,
+                          QObject,
+                          pyqtSignal
+                          )
+                        
+                        
+
+from src.config import DB_FILE, COLONNES_GRAPHIQUE, DATA_DIR
 from src.fonctions import lire_jours_actifs, lire_jours_donnees
 from src.database import initialiser_base, lire_donnees_selectionnees, charger_csvs_par_batch
 from src.graphique import CanvasGraphique
 from synthese import generer_synthese, charger_donnees_periode
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 from typing import Optional, Set
+import logging
+logger = logging.getLogger(__name__)
 
 # --- CLASSE POUR LA SELECTION DES COLONNES ---
 class PageSelectionColonnes(QWidget):
@@ -171,6 +177,19 @@ class FenetrePrincipale(QWidget):
         )
         layout_calendrier.addWidget(legende)
 
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setStyleSheet("background-color: #e8e8e8;")
+        self.log_output.setFixedHeight(100)
+        layout_principal.addWidget(self.log_output)
+
+        # --- Logger redirigé vers la zone de log ---
+        log_handler = QTextEditLogger(self.log_output)
+        log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+        logger.addHandler(log_handler)
+
     def mettre_a_jour_calendrier(self):
         self.calendrier.setDateTextFormat(QDate(), QTextCharFormat())  # Reset
 
@@ -224,14 +243,15 @@ class FenetrePrincipale(QWidget):
 
     def valider_selection(self):
         if self.radio_unique.isChecked():
-            print("→ Date validée :", self.calendrier.selectedDate().toString("yyyy-MM-dd"))
+            date_str = self.calendrier.selectedDate().toString("yyyy-MM-dd")
+            logger.info(f"→ Date validée :{date_str}")
             self.stacked_widget.setCurrentWidget(self.page_selection)
         else:
             if self.date_debut and self.date_fin:
-                print("→ Intervalle validé :", self.date_debut.toString("yyyy-MM-dd"), "→", self.date_fin.toString("yyyy-MM-dd"))
+                logger.info("→ Intervalle validé : %s → %s", self.date_debut.toString("yyyy-MM-dd"), self.date_fin.toString("yyyy-MM-dd"))
                 self.stacked_widget.setCurrentWidget(self.page_selection)
             else:
-                print("⚠️ Sélection d'intervalle incomplète.")
+                logger.info("⚠️ Sélection d'intervalle incomplète.")
 
 
         # ✅ Créer les cases à cocher AVANT de changer de page
@@ -354,7 +374,7 @@ class FenetrePrincipale(QWidget):
 
     def valider_colonnes(self):
         colonnes_selectionnees = [cb.text() for cb in self.checkboxes if cb.isChecked()]
-        print("Colonnes sélectionnées :", colonnes_selectionnees)
+        logger.info(f"Colonnes sélectionnées : {colonnes_selectionnees}")
         # (à toi de déclencher ici le graphique si besoin)
         if not colonnes_selectionnees:
             QMessageBox.warning(self, "Aucune sélection", "Veuillez cocher au moins une colonne.")
@@ -369,10 +389,24 @@ class FenetrePrincipale(QWidget):
             date_debut = self.date_debut.toString("yyyy-MM-dd")
             date_fin = self.date_fin.toString("yyyy-MM-dd")
 
+        # --- Gestion spécifique de 'ecs_etat' ---
+        tracer_ecs_etat = "ecs_etat" in colonnes_selectionnees
+        if tracer_ecs_etat:
+            colonnes_selectionnees.remove("ecs_etat")  # On ne veut pas tracer la courbe brute
+
+        colonnes_avec_datetime = colonnes_selectionnees + ["datetime"]
+        if tracer_ecs_etat:
+            colonnes_avec_datetime.append("ecs_etat")  # colonne brute
+
+        colonnes_avec_datetime = list(dict.fromkeys(colonnes_avec_datetime))
+
+        logger.info(f"Colonnes demandées en lecture : {colonnes_avec_datetime}")
+        logger.debug(f"→ Colonnes SQL finales : {colonnes_avec_datetime}")
+
         
         df = lire_donnees_selectionnees(
             DB_FILE,
-            colonnes_selectionnees,
+            colonnes_avec_datetime,
             date_debut,
             date_fin
             )
@@ -387,8 +421,13 @@ class FenetrePrincipale(QWidget):
                 widget.setParent(None)
         if not df.empty:
             # --- Ajouter le graphique ---
-            
-            self.canvas_graphique.tracer_donnees(df)
+            # --- Tracer les données classiques ---
+            if colonnes_selectionnees:
+                self.canvas_graphique.tracer_donnees(df[["datetime"] + colonnes_selectionnees])
+
+            # --- Tracer état ECS en arrière-plan ---
+            if tracer_ecs_etat:
+                self.canvas_graphique.tracer_ecs_etat_zones(df[["datetime", "ecs_etat"]])
 
         
         # --- Générer et afficher la synthèse ---
@@ -415,9 +454,7 @@ class FenetrePrincipale(QWidget):
         self.stacked_widget.setCurrentWidget(self.page_graphique)
 
     def generer_synthese_dates(self):
-        print("[DEBUG] generer_synthese_dates appelé")
-        print(" → date_debut :", self.date_debut)
-        print(" → date_fin   :", self.date_fin)
+        
 
         if not self.date_debut or not self.date_fin:
             self.label_synthese.setPlainText("⚠️ Aucune période sélectionnée.")
@@ -436,8 +473,21 @@ class FenetrePrincipale(QWidget):
         texte = "\n".join([f"{cle} : {val}" for cle, val in dico.items()])
         self.label_synthese.setPlainText(texte)
 
+class QTextEditLogger(logging.Handler, QObject):
+    log_signal = pyqtSignal(str)
 
+    def __init__(self, text_edit):
+        QObject.__init__(self)
+        logging.Handler.__init__(self)
+        self.text_edit = text_edit
+        self.log_signal.connect(self._append_text)
 
+    def emit(self, record):
+        msg = self.format(record)
+        self.log_signal.emit(msg)
+
+    def _append_text(self, msg):
+        self.text_edit.append(msg)
 
 
 

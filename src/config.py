@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging 
 
 # Dossier racine du projet (on part du fichier config.py dans src/)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +10,11 @@ DATA_DIR = PROJECT_ROOT / "data"
 # Chemin vers la base de données
 DB_FILE = DATA_DIR / "ma_chaudiere.sqlite"
 
+logging.basicConfig(
+    level=logging.INFO,  # Tu peux passer à DEBUG pour plus de détails
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 #dictionnaire de traduction de nom de colonnes
 RENAME_DICT = {
@@ -149,7 +155,16 @@ RANGE_LIMITS = {
     "high": (0, 1000),
 }
 
-
+def ecs_etat_label(val):
+    if val == 16912:
+        return "preparation"
+    elif val == 8208:
+        return "confort"
+    elif val == 8200:
+        return "off"
+    else:
+        return "inconnu"
+        
 STYLE_COLONNE = {
     "temperature_exterieur": {
         "type": "line",                             # Type de courbe "line" | "step" | "bar"
@@ -235,14 +250,6 @@ STYLE_COLONNE = {
         "type": "step",
         "color": "#1f77b4",
         "ylabel": "Pompe ECS (0/1)",
-        "range": "low",
-        "linewidth": 1.5,
-        "marker": None
-    },
-    "ecs_etat": {
-        "type": "step",
-        "color": "#ff7f0e",
-        "ylabel": "État ECS (0/1)",
         "range": "low",
         "linewidth": 1.5,
         "marker": None
@@ -475,7 +482,7 @@ STYLE_COLONNE = {
         "type": "line",
         "color": "#1f77b4",
         "ylabel": "Capteur RA",
-        "range": "middle",
+        "range": "low",
         "linewidth": 1.5,
         "marker": None
     },
@@ -483,7 +490,7 @@ STYLE_COLONNE = {
         "type": "line",
         "color": "#ff7f0e",
         "ylabel": "Capteur ZB",
-        "range": "middle",
+        "range": "low",
         "linewidth": 1.5,
         "marker": None
     },

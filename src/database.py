@@ -10,6 +10,8 @@ import pandas as pd
 import sqlite3
 from src.config import DATA_DIR, DB_FILE, RENAME_DICT
 from tqdm import tqdm
+import logging
+logger = logging.getLogger(__name__)
 
 
 def charger_csvs_par_batch(batch_size=50, update_progress_callback=None):
@@ -42,7 +44,7 @@ def charger_csvs_par_batch(batch_size=50, update_progress_callback=None):
                     df["datetime"] = df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
                     dataframes.append(df)
             except Exception as e:
-                print(f"❌ Erreur {fichier.name} :", e)
+                logger.error(f"❌ Erreur {fichier.name} : {e}")
 
             if update_progress_callback:
                 update_progress_callback(j)
@@ -51,7 +53,6 @@ def charger_csvs_par_batch(batch_size=50, update_progress_callback=None):
         raise ValueError("Aucun fichier CSV valide.")
     
     return pd.concat(dataframes, ignore_index=True)
-
 
 # Types par défaut à affecter selon le nom ou la logique simple
 def infer_sql_type(colname):
@@ -87,7 +88,7 @@ def creer_table_dynamique(conn):
 
 def inserer_donnees(conn, df):
     if df.empty:
-        print("⚠️ DataFrame vide, aucune donnée à insérer.")
+        logger.info("⚠️ DataFrame vide, aucune donnée à insérer.")
         return
 
     colonnes = list(df.columns)
@@ -95,7 +96,7 @@ def inserer_donnees(conn, df):
     # Vérifie que les noms de colonnes sont valides (alphanumériques + underscores uniquement)
     colonnes_valides = [col for col in colonnes if col and col.isidentifier()]
     if not colonnes_valides:
-        print("⚠️ Aucune colonne valide pour l'insertion SQL.")
+        logger.info("⚠️ Aucune colonne valide pour l'insertion SQL.")
         #print("Colonnes détectées :", colonnes)
         return
 
@@ -103,12 +104,6 @@ def inserer_donnees(conn, df):
     colonnes_sql = ', '.join(colonnes_valides)
 
     requete_sql = f"INSERT OR IGNORE INTO donnees ({colonnes_sql}) VALUES ({placeholders})"
-
-    # Affichage de débogage
-    #print("REQUETE SQL:", requete_sql)
-    #print("Colonnes insérées :", colonnes_valides)
-    #print("Exemple ligne :", tuple(df.iloc[0][colonnes_valides]))
-
     donnees = [tuple(row[col] for col in colonnes_valides) for _, row in df.iterrows()]
     
     with conn:
@@ -119,14 +114,14 @@ def jours_avec_donnees(db_path=DB_FILE):
     requete = """
         SELECT DISTINCT date
         FROM donnees
-        ORDER BY jour;
+        ORDER BY date;
     """
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.execute(requete)
             return [row[0] for row in cursor.fetchall()]
     except Exception as e:
-        print("❌ Erreur lors de la lecture des jours avec données :", e)
+        logger.error(f"❌ Erreur lors de la lecture des jours avec données : {e}")
         return []
 
 def creer_vue_jours_actifs(db_path=DB_FILE):
@@ -148,48 +143,49 @@ def creer_vue_jours_actifs(db_path=DB_FILE):
     try:
         with sqlite3.connect(db_path) as conn:
             conn.execute(requete)
-            print("✅ Vue 'jours_actifs' créée ou mise à jour avec succès.")
+            logger.info("✅ Vue 'jours_actifs' créée ou mise à jour avec succès.")
     except Exception as e:
-        print("❌ Erreur lors de la création de la vue :", e)
+        logger.error("❌ Erreur lors de la création de la vue :%s", e)
 
 def lire_donnees_selectionnees(db_path, colonnes, date_debut, date_fin):
     """
     Lit les données de la table `donnees` entre deux dates, avec les colonnes demandées.
     """
     try:
-        champs = ", ".join(['datetime'] + colonnes)
+        champs = ", ".join(dict.fromkeys(['datetime'] + colonnes))
         requete = f"""
             SELECT {champs}
             FROM donnees
             WHERE datetime BETWEEN ? AND ?
             ORDER BY datetime
         """
+        logger.debug(f"→ SQL généré : SELECT {colonnes} ...")
+
         with sqlite3.connect(db_path) as conn:
             df = pd.read_sql_query(requete, conn, params=(f"{date_debut} 00:00:00", f"{date_fin} 23:59:59"))
         df["datetime"] = pd.to_datetime(df["datetime"])
         return df
     except Exception as e:
-        print("❌ Erreur lors de la lecture des données :", e)
+        logger.error("❌ Erreur lors de la lecture des données :%s", e)
         return pd.DataFrame()
-
-
 
 def creer_base_si_absente(db_path=DB_FILE):
     if not Path(db_path).exists():
-        print("⚙️ Base de données absente, création en cours...")
+        logger.info("⚙️ Base de données absente, création en cours...")
 
         try:
-            df = charger_csvs_par_batch()  # Lit tous les CSV
-            print("📊 Données chargées, création de la table...")
-            creer_table_dynamique(df, db_path)  # Insère dans la base
-            creer_vue_jours_actifs(db_path)     # Crée la vue SQL
-            print("✅ Base de données créée avec succès.")
+            df = charger_csvs_par_batch()
+            logger.info("📊 Données chargées, création de la table...")
+            conn = sqlite3.connect(db_path)
+            creer_table_dynamique(conn)
+            inserer_donnees(conn, df)
+            creer_vue_jours_actifs(db_path)
+            conn.close()
+            logger.info("✅ Base de données créée avec succès.")
         except Exception as e:
-            print(f"❌ Erreur lors de la création de la base : {e}")
+            logger.error(f"❌ Erreur lors de la création de la base : {e}")
     else:
-        print("✅ Base de données déjà présente.")
-
-
+        logger.info("✅ Base de données déjà présente.")
 
 
 def initialiser_base(_=None):
@@ -203,5 +199,5 @@ def initialiser_base(_=None):
 
 if __name__ == "__main__":
     initialiser_base()
-    print("Base de données initialisée avec la vue datetime.")
+    logger.info("Base de données initialisée avec la vue datetime.")
  
