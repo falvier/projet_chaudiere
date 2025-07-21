@@ -1,3 +1,4 @@
+
 import sys
 from pathlib import Path
 
@@ -280,6 +281,8 @@ class FenetrePrincipale(QWidget):
                     )
 
     def creer_cases_a_cocher(self, colonnes):
+        # Filtrer pour exclure ecs_etat et chauffage1_statut
+        #colonnes = [c for c in colonnes if c not in ("ecs_etat", "chauffage1_statut")]
         layout_selection = self.page_selection.layout()
 
         # Nettoyer le layout précédent
@@ -375,11 +378,12 @@ class FenetrePrincipale(QWidget):
     def valider_colonnes(self):
         colonnes_selectionnees = [cb.text() for cb in self.checkboxes if cb.isChecked()]
         logger.info(f"Colonnes sélectionnées : {colonnes_selectionnees}")
-        # (à toi de déclencher ici le graphique si besoin)
+
         if not colonnes_selectionnees:
             QMessageBox.warning(self, "Aucune sélection", "Veuillez cocher au moins une colonne.")
             return
 
+        # Dates à récupérer dans tous les cas
         if self.radio_unique.isChecked():
             date_debut = date_fin = self.calendrier.selectedDate().toString("yyyy-MM-dd")
         else:
@@ -389,68 +393,74 @@ class FenetrePrincipale(QWidget):
             date_debut = self.date_debut.toString("yyyy-MM-dd")
             date_fin = self.date_fin.toString("yyyy-MM-dd")
 
-        # --- Gestion spécifique de 'ecs_etat' ---
+        # --- Gestion spécifique des états ECS et chauffage ---
         tracer_ecs_etat = "ecs_etat" in colonnes_selectionnees
         if tracer_ecs_etat:
             colonnes_selectionnees.remove("ecs_etat")  # On ne veut pas tracer la courbe brute
 
+        tracer_chauffage1 = "chauffage1_statut" in colonnes_selectionnees
+        if tracer_chauffage1:
+            colonnes_selectionnees.remove("chauffage1_statut")
+
+        # --- Colonnes à charger depuis la base ---
         colonnes_avec_datetime = colonnes_selectionnees + ["datetime"]
         if tracer_ecs_etat:
-            colonnes_avec_datetime.append("ecs_etat")  # colonne brute
+            colonnes_avec_datetime.append("ecs_etat")
+        if tracer_chauffage1:
+            colonnes_avec_datetime.append("chauffage1_statut")
 
-        colonnes_avec_datetime = list(dict.fromkeys(colonnes_avec_datetime))
+        colonnes_avec_datetime = list(dict.fromkeys(colonnes_avec_datetime))  # dédoublonnage
 
         logger.info(f"Colonnes demandées en lecture : {colonnes_avec_datetime}")
         logger.debug(f"→ Colonnes SQL finales : {colonnes_avec_datetime}")
 
-        
+        # --- Lecture des données ---
         df = lire_donnees_selectionnees(
             DB_FILE,
             colonnes_avec_datetime,
             date_debut,
             date_fin
-            )
+        )
+
         if df.empty:
             QMessageBox.information(self, "Pas de données", "Aucune donnée trouvée pour cette période.")
-            return 
-        
-        # --- Nettoyer page graphique avant d’ajouter ---
+            return
+
+        print(f"Colonnes actuelles dans le DataFrame : {df.columns.tolist()}")
+
+        # --- Nettoyer la page graphique ---
         for i in reversed(range(self.layout_graphique.count())):
             widget = self.layout_graphique.itemAt(i).widget()
             if widget and widget != self.canvas_graphique:
                 widget.setParent(None)
-        if not df.empty:
-            # --- Ajouter le graphique ---
-            # --- Tracer les données classiques ---
-            if colonnes_selectionnees:
-                self.canvas_graphique.tracer_donnees(df[["datetime"] + colonnes_selectionnees])
 
-            # --- Tracer état ECS en arrière-plan ---
-            if tracer_ecs_etat:
-                self.canvas_graphique.tracer_ecs_etat_zones(df[["datetime", "ecs_etat"]])
+        # --- Tracer les données ---
+        self.canvas_graphique.tracer_donnees(df, zones=False)
+
+        if tracer_ecs_etat and "ecs_etat" in df.columns:
+            self.canvas_graphique.tracer_ecs_etat_zones(df[["datetime", "ecs_etat"]])
+
+        if tracer_chauffage1 and "chauffage1_statut" in df.columns:
+            self.canvas_graphique.tracer_chauffage_zones(df[["datetime", "chauffage1_statut"]])
+
 
         
-        # --- Générer et afficher la synthèse ---
-        
+
+        # --- Synthèse ---
         self.date_debut = QDate.fromString(date_debut, "yyyy-MM-dd")
         self.date_fin = QDate.fromString(date_fin, "yyyy-MM-dd")
 
         self.generer_synthese_dates()
         self.label_synthese.setReadOnly(True)
-        
         self.label_synthese.setStyleSheet("background-color: #f5f5f5; padding: 10px;")
-
         self.layout_graphique.addWidget(self.label_synthese)
-
-        # ✅ Passer à la page graphique
-        self.stacked_widget.setCurrentWidget(self.page_graphique)
 
         # --- Bouton retour ---
         bouton_retour = QPushButton("⬅️ Retour à la sélection")
         bouton_retour.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.page_selection))
         self.layout_graphique.addWidget(bouton_retour)
 
-        # --- Afficher la page graphique ---
+        # --- Affichage de la page graphique ---
         self.stacked_widget.setCurrentWidget(self.page_graphique)
 
     def generer_synthese_dates(self):

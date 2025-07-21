@@ -188,6 +188,7 @@ def creer_base_si_absente(db_path=DB_FILE):
         logger.info("✅ Base de données déjà présente.")
 
 
+
 def initialiser_base(_=None):
     conn = sqlite3.connect(DB_FILE)
     df = charger_csvs_par_batch()
@@ -195,6 +196,26 @@ def initialiser_base(_=None):
     inserer_donnees(conn, df)
     creer_vue_jours_actifs()
     conn.close()
+
+def charger_donnees_sqlite_par_colonnes(nom_table, colonnes):
+    """
+    Charge depuis une table SQLite les colonnes spécifiées, avec sécurité.
+    Renvoie un DataFrame vide si une erreur survient.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        colonnes_str = ", ".join(colonnes)
+        query = f"SELECT {colonnes_str} FROM {nom_table}"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        logger.info(f"🔎 Colonnes demandées : {colonnes}")
+        logger.info(f"✅ Colonnes lues : {df.columns.tolist()}")
+        return df
+
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du chargement des colonnes depuis {nom_table} : {e}")
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":

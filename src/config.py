@@ -1,3 +1,5 @@
+
+
 from pathlib import Path
 import logging 
 
@@ -30,12 +32,12 @@ RENAME_DICT = {
     'HK1 Pumpe': 'chauffage1_pompe',
     'HK1 Mischer': 'chauffage1_melangeur',
     'HK1 Fernb[°C]': 'chauffage1_telecommande', #inutilisé
-    'HK1 Status': 'chauffage1_statut', #Réduit actif, temp ext > lim T ext
+    'HK1 Status': 'chauffage1_statut', #reduit actif, temp ext > lim T ext
     'WW1 EinT Ist[°C]': 'ecs_marche_mesure', #inutilisé, pour le bouclage ecs
     'WW1 AusT Ist[°C]': 'ecs_arret_mesure',
     'WW1 Soll[°C]': 'ecs_consigne',
     'WW1 Pumpe': 'ecs_pompe', #inutilisé, pour le bouclage ecs
-    'WW1 Status': 'ecs_etat', #Off, T réduit atteinte
+    'WW1 Status': 'ecs_etat', #Off, T reduit atteinte
     'PE1 KT[°C]': 'chaudiere_temp_mesure',
     'PE1 KT_SOLL[°C]': 'chaudiere_temp_consigne',
     'PE1 UW Freigabe[°C]': 'chaudiere_uw_autorisation', #temporisation marche
@@ -156,14 +158,45 @@ RANGE_LIMITS = {
 }
 
 def ecs_etat_label(val):
-    if val == 16912:
-        return "preparation"
-    elif val == 8208:
-        return "confort"
-    elif val == 8200:
-        return "off"
+    """
+    Retourne un label lisible pour les codes de statut ECS.
+    """
+    if isinstance(val, int):
+        if val == 8200:
+            return "off"
+        elif val == 16912:
+            return "preparation"
+        elif val == 8208:
+            return "confort"
+        else:
+            return f"inconnu ({val})"
+    elif isinstance(val, str):
+        return val
     else:
         return "inconnu"
+    
+def chauffage1_label(val):
+    """
+    Retourne un label lisible pour les codes de statut chauffage1.
+    """
+    if isinstance(val, int):
+        if val == 0:
+            return "off"
+        elif val == 16:
+            return "reduit"
+        elif val == 32:
+            return "confort"
+        elif val == 1056:
+            return "mode 1"
+        elif val == 2097184:
+            return "mode 2"
+        else:
+            return f"inconnu ({val})"
+    elif isinstance(val, str):
+        return val
+    else:
+        return "inconnu"
+    
         
 STYLE_COLONNE = {
     "temperature_exterieur": {
@@ -211,14 +244,6 @@ STYLE_COLONNE = {
         "color": "#8c564b",
         "ylabel": "Mélangeur chauffage (%)",
         "range": "middle",
-        "linewidth": 1.5,
-        "marker": None
-    },
-    "chauffage1_statut": {
-        "type": "step",
-        "color": "#e377c2",
-        "ylabel": "Statut chauffage (0/1)",
-        "range": "low",
         "linewidth": 1.5,
         "marker": None
     },

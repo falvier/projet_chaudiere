@@ -24,7 +24,7 @@ def lire_jours_actifs(db_path=DB_FILE):
         return jours
     except Exception as e:
         logger.error("❌ Erreur lors de la lecture de la vue 'jours_actifs' :%s", e)
-        logger.info(f"✅ {len(jours)} jours avec chauffage actifs")
+        
         return []
 
 
@@ -44,7 +44,7 @@ def lire_jours_donnees(db_path=DB_FILE):
         return jours
     except Exception as e:
         logger.error("❌ Erreur lors de la lecture des jours dans donnees :%s", e)
-        logger.info(f"✅ {len(jours)} jours avec données")
+        
 
         return []
 
