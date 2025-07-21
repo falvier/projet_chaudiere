@@ -9,7 +9,7 @@ le programme créer une base de données et génere graphiqe et synthèse en fon
 ## 📁 Structure du projet
 
 ```
-okofen/
+okofenv2/
 ├── data/                   # Données brutes : tous les fichiers CSV.
 │   └── *.csv
 │   └── chaudiere.sqlite    # Base de données SQLite créée depuis les CSV.
@@ -19,10 +19,9 @@ okofen/
 │   ├── database.py         # Création et manipulation de la base SQLite.
 │   ├── fonction.py         # Outils d’analyse et d’exploitation des données.
 │   ├── main.py             # Script principal pour orchestrer la base et les analyses.
-│   ├── verif_data.py       # Vérification format et cohérence des CSV.
-│   ├── grahique.py         # Création de graphique.
+│   ├── graphique.py         # Création de graphique.
 │   ├── interface.py        # Interface utilisateur.
-│   ├── synthese.py         # structure de l'interface.
+│   ├── synthese.py         # synthèse de différent éléments.
 
 
 ├── README.md               # Explication du projet.
