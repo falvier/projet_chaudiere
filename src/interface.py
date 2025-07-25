@@ -35,7 +35,7 @@ from PyQt5.QtCore import (QDate,
                         
 
 from src.config import DB_FILE, COLONNES_GRAPHIQUE, DATA_DIR
-from src.fonctions import lire_jours_actifs, lire_jours_donnees
+from src.fonctions import lire_jours_actifs, lire_jours_donnees, aplatir
 from src.database import initialiser_base, lire_donnees_selectionnees, charger_csvs_par_batch
 from src.graphique import CanvasGraphique
 from synthese import generer_synthese, charger_donnees_periode
@@ -43,24 +43,7 @@ from typing import Optional, Set
 import logging
 logger = logging.getLogger(__name__)
 
-# --- CLASSE POUR LA SELECTION DES COLONNES ---
-class PageSelectionColonnes(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
 
-        label = QLabel("Sélectionnez les données à afficher :")
-        layout.addWidget(label)
-
-        # Quelques cases à cocher (exemple)
-        self.checkbox_temp = QPushButton("Température chaudière")
-        self.checkbox_consigne = QPushButton("Consigne ECS")
-        layout.addWidget(self.checkbox_temp)
-        layout.addWidget(self.checkbox_consigne)
-
-        # Bouton pour afficher le graphique (à relier plus tard)
-        self.bouton_afficher = QPushButton("Afficher le graphique")
-        layout.addWidget(self.bouton_afficher)
 
 
 # --- CLASSE PRINCIPALE DE LA FENÊTRE ---
@@ -69,7 +52,7 @@ class FenetrePrincipale(QWidget):
         super().__init__()
         self.setWindowTitle("Mon interface")
         self.resize(400, 300)
-
+        
         # --- Attributs de sélection ---
         self.date_debut: Optional[QDate] = None
         self.date_fin: Optional[QDate] = None
@@ -281,8 +264,7 @@ class FenetrePrincipale(QWidget):
                     )
 
     def creer_cases_a_cocher(self, colonnes):
-        # Filtrer pour exclure ecs_etat et chauffage1_statut
-        #colonnes = [c for c in colonnes if c not in ("ecs_etat", "chauffage1_statut")]
+        
         layout_selection = self.page_selection.layout()
 
         # Nettoyer le layout précédent
@@ -314,6 +296,7 @@ class FenetrePrincipale(QWidget):
         ligne_haut.addStretch()
         layout_selection.addLayout(ligne_haut)
 
+
         # 3. ✅ Cases à cocher sur plusieurs colonnes dans une zone scrollable
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -337,6 +320,7 @@ class FenetrePrincipale(QWidget):
         # 🧱 GridLayout pour organiser les cases sur plusieurs colonnes
         grid = QGridLayout(conteneur)
 
+        
         self.checkboxes = []
         for index, col in enumerate(colonnes):
             checkbox = QCheckBox(col)
@@ -376,92 +360,69 @@ class FenetrePrincipale(QWidget):
         self.stacked_widget.setCurrentWidget(self.page_calendrier)
 
     def valider_colonnes(self):
-        colonnes_selectionnees = [cb.text() for cb in self.checkboxes if cb.isChecked()]
-        logger.info(f"Colonnes sélectionnées : {colonnes_selectionnees}")
+        colonnes = self.recuperer_colonnes_selectionnees()
+        periode = self.recuperer_periode_selectionnee()
 
-        if not colonnes_selectionnees:
-            QMessageBox.warning(self, "Aucune sélection", "Veuillez cocher au moins une colonne.")
+        if not periode:
+            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une plage de dates.")
             return
 
-        # Dates à récupérer dans tous les cas
-        if self.radio_unique.isChecked():
-            date_debut = date_fin = self.calendrier.selectedDate().toString("yyyy-MM-dd")
-        else:
-            if not self.date_debut or not self.date_fin:
-                QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une plage de dates.")
-                return
-            date_debut = self.date_debut.toString("yyyy-MM-dd")
-            date_fin = self.date_fin.toString("yyyy-MM-dd")
+        date_debut, date_fin = periode
+        df_complet, df_affichage = lire_donnees_selectionnees(DB_FILE, colonnes, date_debut, date_fin)
 
-        # --- Gestion spécifique des états ECS et chauffage ---
-        tracer_ecs_etat = "ecs_etat" in colonnes_selectionnees
-        if tracer_ecs_etat:
-            colonnes_selectionnees.remove("ecs_etat")  # On ne veut pas tracer la courbe brute
-
-        tracer_chauffage1 = "chauffage1_statut" in colonnes_selectionnees
-        if tracer_chauffage1:
-            colonnes_selectionnees.remove("chauffage1_statut")
-
-        # --- Colonnes à charger depuis la base ---
-        colonnes_avec_datetime = colonnes_selectionnees + ["datetime"]
-        if tracer_ecs_etat:
-            colonnes_avec_datetime.append("ecs_etat")
-        if tracer_chauffage1:
-            colonnes_avec_datetime.append("chauffage1_statut")
-
-        colonnes_avec_datetime = list(dict.fromkeys(colonnes_avec_datetime))  # dédoublonnage
-
-        logger.info(f"Colonnes demandées en lecture : {colonnes_avec_datetime}")
-        logger.debug(f"→ Colonnes SQL finales : {colonnes_avec_datetime}")
-
-        # --- Lecture des données ---
-        df = lire_donnees_selectionnees(
-            DB_FILE,
-            colonnes_avec_datetime,
-            date_debut,
-            date_fin
-        )
-
-        if df.empty:
-            QMessageBox.information(self, "Pas de données", "Aucune donnée trouvée pour cette période.")
+        if df_affichage.empty:
+            QMessageBox.information(self, "Résultat", "Aucune donnée disponible pour cette période.")
             return
 
-        print(f"Colonnes actuelles dans le DataFrame : {df.columns.tolist()}")
-
-        # --- Nettoyer la page graphique ---
-        for i in reversed(range(self.layout_graphique.count())):
-            widget = self.layout_graphique.itemAt(i).widget()
-            if widget and widget != self.canvas_graphique:
-                widget.setParent(None)
-
-        # --- Tracer les données ---
-        self.canvas_graphique.tracer_donnees(df, zones=False)
-
-        if tracer_ecs_etat and "ecs_etat" in df.columns:
-            self.canvas_graphique.tracer_ecs_etat_zones(df[["datetime", "ecs_etat"]])
-
-        if tracer_chauffage1 and "chauffage1_statut" in df.columns:
-            self.canvas_graphique.tracer_chauffage_zones(df[["datetime", "chauffage1_statut"]])
-
-
-        
+        # Tracer les courbes
+        self.canvas_graphique.tracer_courbes(df_affichage)
 
         # --- Synthèse ---
         self.date_debut = QDate.fromString(date_debut, "yyyy-MM-dd")
         self.date_fin = QDate.fromString(date_fin, "yyyy-MM-dd")
 
-        self.generer_synthese_dates()
+        # 🔧 MODIF : synthèse sur le df complet (même si certaines colonnes ne sont pas affichées)
+        synthese = generer_synthese(df_complet)
+        texte = "\n".join(f"{cle} : {val}" for cle, val in synthese.items())
+
+        self.label_synthese.setText(texte)
         self.label_synthese.setReadOnly(True)
         self.label_synthese.setStyleSheet("background-color: #f5f5f5; padding: 10px;")
+
         self.layout_graphique.addWidget(self.label_synthese)
 
-        # --- Bouton retour ---
+        if not hasattr(self, "bouton_retour"):
+            self.bouton_retour = QPushButton("⬅️ Retour à la sélection")
+            self.bouton_retour.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.page_selection))
+            self.layout_graphique.addWidget(self.bouton_retour)
+
+        self.stacked_widget.setCurrentWidget(self.page_graphique)
+
+
+    def recuperer_colonnes_selectionnees(self):
+        colonnes_selectionnees = [cb.text() for cb in self.checkboxes if cb.isChecked()]
+        logger.info(f"Colonnes sélectionnées : {colonnes_selectionnees}")
+        return colonnes_selectionnees
+
+    def recuperer_periode_selectionnee(self):
+        if self.radio_unique.isChecked():
+            date = self.calendrier.selectedDate().toString("yyyy-MM-dd")
+            return date, date
+        else:
+            if not self.date_debut or not self.date_fin:
+                return None
+            return self.date_debut.toString("yyyy-MM-dd"), self.date_fin.toString("yyyy-MM-dd")
+    
+    def nettoyer_page_graphique(self):
+        for i in reversed(range(self.layout_graphique.count())):
+            widget = self.layout_graphique.itemAt(i).widget()
+            if widget and widget != self.canvas_graphique:
+                widget.setParent(None)
+
+    def ajouter_bouton_retour(self):
         bouton_retour = QPushButton("⬅️ Retour à la sélection")
         bouton_retour.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.page_selection))
         self.layout_graphique.addWidget(bouton_retour)
-
-        # --- Affichage de la page graphique ---
-        self.stacked_widget.setCurrentWidget(self.page_graphique)
 
     def generer_synthese_dates(self):
         
