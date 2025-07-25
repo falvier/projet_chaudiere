@@ -49,5 +49,12 @@ def lire_jours_donnees(db_path=DB_FILE):
         return []
 
 
-
+def aplatir(liste):
+            res = []
+            for el in liste:
+                if isinstance(el, list):
+                    res.extend(aplatir(el))
+                else:
+                    res.append(el)
+            return res
 

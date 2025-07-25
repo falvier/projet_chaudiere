@@ -32,7 +32,7 @@ RENAME_DICT = {
     'HK1 Pumpe': 'chauffage1_pompe',
     'HK1 Mischer': 'chauffage1_melangeur',
     'HK1 Fernb[°C]': 'chauffage1_telecommande', #inutilisé
-    'HK1 Status': 'chauffage1_statut', #reduit actif, temp ext > lim T ext
+    'HK1 Status': 'chauffage1_etat', #reduit actif, temp ext > lim T ext
     'WW1 EinT Ist[°C]': 'ecs_marche_mesure', #inutilisé, pour le bouclage ecs
     'WW1 AusT Ist[°C]': 'ecs_arret_mesure',
     'WW1 Soll[°C]': 'ecs_consigne',
@@ -80,22 +80,22 @@ RENAME_DICT = {
 }
 
 COLONNES_GRAPHIQUE = [
+    'ecs_etat',
+    'chauffage1_etat',
+    'modulation_puissance_chaudiere',
     'temperature_exterieur',
     'temperature_actuelle',
     'chauffage1_depart_mesure',
     'chauffage1_depart_consigne',
     'chauffage1_pompe',
     'chauffage1_melangeur',
-    'chauffage1_statut',
     'ecs_marche_mesure',
     'ecs_arret_mesure',
     'ecs_consigne',
-    'ecs_pompe',
-    'ecs_etat',
+    'ecs_pompe',    
     'chaudiere_temp_mesure',
     'chaudiere_temp_consigne',
-    'chaudiere_uw_autorisation',
-    'modulation_puissance_chaudiere',
+    'chaudiere_uw_autorisation',    
     'flamme_mesure',
     'flamme_consigne',
     'flamme_finale_consigne',
@@ -155,6 +155,7 @@ RANGE_LIMITS = {
     "low": (0, 1.1),
     "middle": (-20, 100),
     "high": (0, 1000),
+    "state": (0, 1)
 }
 
 def ecs_etat_label(val):
@@ -168,19 +169,21 @@ def ecs_etat_label(val):
             return "preparation"
         elif val == 8208:
             return "confort"
+        elif val == 17936:
+            return "mode 1"
         else:
-            return f"inconnu ({val})"
+            return "données inconnu"
     elif isinstance(val, str):
         return val
     else:
-        return "inconnu"
+        return "données inconnu"
     
 def chauffage1_label(val):
     """
     Retourne un label lisible pour les codes de statut chauffage1.
     """
     if isinstance(val, int):
-        if val == 0:
+        if val == 8:
             return "off"
         elif val == 16:
             return "reduit"
@@ -199,6 +202,41 @@ def chauffage1_label(val):
     
         
 STYLE_COLONNE = {
+    "ecs_etat": {
+        "type": "zone",
+        "range": "state",
+        "gradient": "up",
+        "ylabel": "ecs_etat",
+        "alpha": 0.5,
+        "etats": {
+            8200: "#FFFFFF00",
+            16912: "#a6cee3",
+            8208: "#1f78b4",
+            17936: "#08519c",
+            "__default__": "#FF0000"} # teinte de réserve 2171b5, 08306b
+    },
+    "chauffage1_etat": {
+        "type": "zone",
+        "range": "state",
+        "gradient": "down",
+        "ylabel": "chauffage1_etat",
+        "alpha": 0.5,
+        "etats": {
+            8: "#FFFFFF00",
+            16: "#fdae6b",
+            32: "#e6550d",
+            1056: "#a63603",
+            2097184: "#de2d26",
+            "__default__": "#FF0000"}  # teinte de réserve 7f0000
+    },
+    "temperature_actuelle": {
+        "type": "line",
+        "color": "#ff7f0e",
+        "ylabel": "Température actuelle (°C)",
+        "range": "middle",
+        "linewidth": 1.5,
+        "marker": None
+    },
     "temperature_exterieur": {
         "type": "line",                             # Type de courbe "line" | "step" | "bar"
         "color": "#1f77b4",                            # Couleur matplotlib (nom ou hexadécimal)
@@ -207,14 +245,7 @@ STYLE_COLONNE = {
         "linewidth": 1.5,                           # Épaisseur du trait (facultatif)
         "marker": "o"                               # Marqueur sur les points (facultatif)"o" | "^" | None
     },
-        "temperature_actuelle": {
-        "type": "line",
-        "color": "#ff7f0e",
-        "ylabel": "Température actuelle (°C)",
-        "range": "middle",
-        "linewidth": 1.5,
-        "marker": None
-    },
+
     "chauffage1_depart_mesure": {
         "type": "line",
         "color": "#2ca02c",

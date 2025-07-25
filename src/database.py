@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 import sqlite3
 from src.config import DATA_DIR, DB_FILE, RENAME_DICT
+from fonctions import aplatir
 from tqdm import tqdm
 import logging
 logger = logging.getLogger(__name__)
@@ -147,24 +148,34 @@ def creer_vue_jours_actifs(db_path=DB_FILE):
     except Exception as e:
         logger.error("❌ Erreur lors de la création de la vue :%s", e)
 
-def lire_donnees_selectionnees(db_path, colonnes, date_debut, date_fin):
+def lire_donnees_selectionnees(db_path, colonnes_affichees=None, date_debut=None, date_fin=None):
     """
     Lit les données de la table `donnees` entre deux dates, avec les colonnes demandées.
     """
     try:
-        champs = ", ".join(dict.fromkeys(['datetime'] + colonnes))
+
         requete = f"""
-            SELECT {champs}
+            SELECT *
             FROM donnees
             WHERE datetime BETWEEN ? AND ?
             ORDER BY datetime
         """
-        logger.debug(f"→ SQL généré : SELECT {colonnes} ...")
+        
 
         with sqlite3.connect(db_path) as conn:
             df = pd.read_sql_query(requete, conn, params=(f"{date_debut} 00:00:00", f"{date_fin} 23:59:59"))
+            
         df["datetime"] = pd.to_datetime(df["datetime"])
-        return df
+
+        # 🔧 MODIF : on isole les colonnes à tracer (si spécifiées)
+        if colonnes_affichees:
+            colonnes_affichees = [col for col in colonnes_affichees if col in df.columns]
+            df_affichage = df[["datetime"] + colonnes_affichees]
+        else:
+            df_affichage = df  # sinon on affiche tout
+
+        return df, df_affichage
+    
     except Exception as e:
         logger.error("❌ Erreur lors de la lecture des données :%s", e)
         return pd.DataFrame()
